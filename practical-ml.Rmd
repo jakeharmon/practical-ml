@@ -1,0 +1,93 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+library(ggplot2);
+library(caret); 
+library(doMC);
+registerDoMC(8);
+set.seed(333);
+```
+---
+title: "Practical Machine Learning Project"
+date: "February 22, 2015"
+output: html_document
+---
+
+
+#Function to create files for submission
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+#Load Data
+```{r}
+pml <- read.csv(file = "pml-training.csv",header = T,na.strings = c("NA","","#DIV/0!"))
+pml_submit <- read.csv(file = "pml-testing.csv",header = T,na.strings = c("NA","","#DIV/0!"))
+```
+#Partition data into training and test sets
+```{r}
+inTrain <- createDataPartition(y=pml$classe,p=0.7, list=FALSE)
+
+training <- pml[inTrain,]
+testing <- pml[-inTrain,]
+```
+#Analysis of the data showed that many of the columns only have values when new_window is true.
+#These these values are so sparse it doesn't make sense to try to impute.
+
+```{r}
+tmp <- data.frame(apply(training, 2,function(x) sum(is.na(x))>length(x)/2))
+removeCols <- which(tmp==T)
+```
+# separate classe as prediction (Don't have to do this, but I did.)
+
+```{r}
+train_y <- training[,dim(training)[[2]]]
+test_y <- testing[,dim(testing)[[2]]]
+```
+##Play around with removing the first 7 variables as well they may cause overfitting.  
+##I settled on removing 1-6, all the sparse variables and the classe variable which I put into it's own vector.
+## Have to do this for for training, testing and the data we are trying to predict on.
+```{r}
+training <- training[,-c(1:6,removeCols, 160)]
+testing <- testing[,-c(1:6,removeCols, 160)]
+
+pml_submit <-pml_submit[,-c(1:6,removeCols)]
+```
+
+##First try using linear discriminent analysis with standardization, got about 70% accuracy.
+```{r}
+modelFit <- train(x = training,y = train_y, preProcess=c("center","scale"),method="lda")
+modelFit
+
+confusionMatrix(test_y,predict(modelFit,testing))
+```
+
+##Second try is Random Forest with k-fold cross validation as the control
+```{r}
+tc <- trainControl(method="cv", number=4)
+modelFitRF <- train(x = training,y = train_y,method="rf", trainControl=tc, preProcess=c("center","scale"))
+modelFitRF
+```
+
+## Almost perfect with Random Forests, but took ~1hr to train on my i7 processor.
+```{r}
+confusionMatrix(test_y,predict(modelFitRF,testing))
+```
+
+submission <- predict(modelFitRF,pml_submit)
+##Try to reduce the predictors to see if we can make it go faster without giving up too 
+##much predictive power.
+#pml_write_files(submission)
+# preProc <- preProcess(training,method="pca",thresh=.9)
+##reduced from 52 to 18 variables keeping 90% of the variablity
+# trainPCA <- predict(preProc,training) 
+# modelFitRF_PCA <- train(x = trainPCA,y = train_y,method="rf", trainControl=tc)
+# testPCA <- predict(preProc,testing) 
+# confusionMatrix(test_y,predict(modelFitRF_PCA,testPCA))
+#Accuracy : 0.9733  
+## Less accuracy but only took ~5 minutes instead of and hour to train.  Trade-offs I guess.
