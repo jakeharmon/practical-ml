@@ -1,2 +1,3 @@
 # practical-ml
+To view the final html document, follow this link...
 http://htmlpreview.github.io/?https://github.com/jakeharmon/practical-ml/blob/master/practical-ml.html
